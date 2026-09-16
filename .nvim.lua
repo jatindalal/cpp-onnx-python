@@ -1,0 +1,8 @@
+vim.api.nvim_create_user_command("Configure",function ()
+    vim.cmd.tabnew()
+    vim.cmd.terminal("cmake . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1")
+end, {})
+vim.api.nvim_create_user_command("Build",function ()
+    vim.cmd.tabnew()
+    vim.cmd.terminal("ninja -C build")
+end, {})

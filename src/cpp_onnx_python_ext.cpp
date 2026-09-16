@@ -1,4 +1,5 @@
 #include <nanobind/nanobind.h>
+#include <onnxruntime_cxx_api.h>
 
 namespace nb = nanobind;
 
