@@ -46,14 +46,14 @@ include(cmake/bootstrap.cmake)
 add_library(onnxruntime SHARED IMPORTED GLOBAL)
 
 if(WIN32)
-    set(LIB_LOCATION "${ORT_DIR}/lib/onnxruntime.dll")
-elseif(APPLE)
-    set(LIB_LOCATION "${ORT_DIR}/lib/libonnxruntime.dylib")
-elseif(UNIX)
-    set(LIB_LOCATION "${ORT_DIR}/lib/libonnxruntime.so")
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_IMPLIB "${ORT_IMPLIB}"
+        IMPORTED_LOCATION "${ORT_RUNTIME_DLL}")
+else()
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${ORT_LIB_FILE}")
 endif()
 set_target_properties(onnxruntime PROPERTIES
-    IMPORTED_LOCATION "${LIB_LOCATION}"
     INTERFACE_INCLUDE_DIRECTORIES "${ORT_DIR}/include")
 
 nanobind_add_module(
@@ -65,5 +65,32 @@ nanobind_add_module(
 
 target_link_libraries(cpp_onnx_python_ext PRIVATE onnxruntime)
 
-# Install directive for scikit-build-core
-install(TARGETS cpp_onnx_python_ext LIBRARY DESTINATION cpp_onnx_python)
+if(APPLE)
+    set(EXT_RPATH "@loader_path")
+elseif(UNIX)
+    set(EXT_RPATH "$ORIGIN")
+endif()
+if(EXT_RPATH)
+    set_property(TARGET cpp_onnx_python_ext PROPERTY BUILD_RPATH "${EXT_RPATH}")
+    set_property(TARGET cpp_onnx_python_ext PROPERTY INSTALL_RPATH "${EXT_RPATH}")
+endif()
+
+# need to add runtime destination so that windows works
+# library for macos / linux
+install(TARGETS cpp_onnx_python_ext
+    LIBRARY DESTINATION cpp_onnx_python
+    RUNTIME DESTINATION cpp_onnx_python)
+
+if(WIN32)
+    install(FILES "${ORT_RUNTIME_DLL}" DESTINATION cpp_onnx_python)
+else()
+    # Real file plus the SONAME / install-name symlinks, resolved
+    # relative to lib/.
+    install(DIRECTORY "${ORT_DIR}/lib/"
+        DESTINATION cpp_onnx_python
+        FILES_MATCHING
+        PATTERN "${ORT_LIB_NAME}*"
+        PATTERN "*.dSYM" EXCLUDE
+        PATTERN "cmake" EXCLUDE
+        PATTERN "pkgconfig" EXCLUDE)
+endif()

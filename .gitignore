@@ -213,10 +213,12 @@ tempCodeRunnerFile.py
 
 # Marimo
 marimo/_static/
-marimo/_l[118;1:3usp/
+marimo/_lusp/
 __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
 
 *third-party*
+docs/
+TASKLIST.md
