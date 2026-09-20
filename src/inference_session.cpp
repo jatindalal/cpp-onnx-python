@@ -172,9 +172,9 @@ std::vector<nb::ndarray<nb::numpy>> InferenceSession::run(const std::vector<nb::
 
 		std::vector<size_t> s_shape;
 		s_shape.reserve(shape.size());
-		for (int64_t dim : shape)
+		for (int64_t dim : shape) {
 			s_shape.push_back(static_cast<size_t>(dim));
-
+		}
 		outputs.push_back(
 			nb::ndarray<nb::numpy>(buffer, s_shape.size(), s_shape.data(), owner, { }, dtype));
 	}
