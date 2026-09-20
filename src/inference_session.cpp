@@ -41,6 +41,24 @@ Ort::Session InferenceSession::create_session(const char *model_path,
 	int intra_op_num_threads)
 {
 	Ort::SessionOptions session_options;
+	if (provider == InferenceSessionProvider::GPU) {
+		std::vector<std::string> providers = Ort::GetAvailableProviders();
+#if defined(_WIN32) || defined(__linux__)
+		std::string provider = "CUDAExecutionProvider";
+#elif defined(__APPLE__)
+		std::string provider = "CoreMLExecutionProvider";
+#else
+#error "Unsupported Platform"
+#endif
+		if (std::find(providers.begin(), providers.end(), provider) == providers.end()) {
+			throw std::runtime_error(std::format("Onnxruntime isn't built with {}", provider));
+		}
+#if defined(_WIN32) || defined(__linux__)
+		session_options.AppendExecutionProvider_CUDA(0);
+#elif defined(__APPLE__)
+		session_options.AppendExecutionProvider("CoreML");
+#endif
+	}
 	session_options.SetIntraOpNumThreads(intra_op_num_threads);
 	return Ort::Session(m_ort_env, model_path, session_options);
 }
