@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.15...3.26)
 
 project(cpp-onnx-python LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 if (NOT SKBUILD)
   message(WARNING "\
   This CMake file is meant to be executed using 'scikit-build'. Running
@@ -61,9 +64,11 @@ nanobind_add_module(
   STABLE_ABI
   NB_STATIC
   src/cpp_onnx_python_ext.cpp
+  src/inference_session.cpp
 )
 
 target_link_libraries(cpp_onnx_python_ext PRIVATE onnxruntime)
+target_include_directories(cpp_onnx_python_ext PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 if(APPLE)
     set(EXT_RPATH "@loader_path")
