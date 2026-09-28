@@ -73,7 +73,7 @@ endif()
 
 if(WIN32)
     execute_process(
-        COMMAND "${CMAKE_COMMAND}" -E unzip "${ARCHIVE_PATH}"
+        COMMAND "${CMAKE_COMMAND}" -E tar xf "${ARCHIVE_PATH}"
         WORKING_DIRECTORY "${DEPS_DIR}"
         RESULT_VARIABLE RESULT
     )
