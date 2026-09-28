@@ -9,50 +9,6 @@ namespace nb = nanobind;
 
 using namespace nb::literals;
 
-nb::dict model_info(const char *model_path)
-{
-	nb::dict info;
-	nb::list input_info, output_info;
-	Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "model info");
-	Ort::SessionOptions session_options;
-	Ort::Session session(env, model_path, session_options);
-	Ort::AllocatorWithDefaultOptions allocator;
-	size_t input_count = session.GetInputCount();
-	size_t output_count = session.GetOutputCount();
-	for (size_t input_index = 0; input_index < input_count; input_index++) {
-		Ort::AllocatedStringPtr name = session.GetInputNameAllocated(input_index, allocator);
-		Ort::TypeInfo type_info = session.GetInputTypeInfo(input_index);
-		Ort::ConstTensorTypeAndShapeInfo tensor_info = type_info.GetTensorTypeAndShapeInfo();
-		ONNXTensorElementDataType element_type = tensor_info.GetElementType();
-		std::vector<int64_t> shape = tensor_info.GetShape();
-
-		nb::dict info;
-		info["name"] = name.get();
-		info["rank"] = shape.size();
-		info["shape"] = shape;
-		info["type"] = element_type;
-		input_info.append(info);
-	}
-	for (size_t output_index = 0; output_index < output_count; output_index++) {
-		Ort::AllocatedStringPtr name = session.GetOutputNameAllocated(output_index, allocator);
-		Ort::TypeInfo type_info = session.GetOutputTypeInfo(output_index);
-		Ort::ConstTensorTypeAndShapeInfo tensor_info = type_info.GetTensorTypeAndShapeInfo();
-		ONNXTensorElementDataType element_type = tensor_info.GetElementType();
-		std::vector<int64_t> shape = tensor_info.GetShape();
-
-		nb::dict info;
-		info["name"] = name.get();
-		info["rank"] = shape.size();
-		info["shape"] = shape;
-		info["type"] = element_type;
-		output_info.append(info);
-	}
-
-	info["input"] = input_info;
-	info["output"] = output_info;
-	return info;
-}
-
 NB_MODULE(cpp_onnx_python_ext, m)
 {
 	nb::enum_<ONNXTensorElementDataType>(m, "ONNXTensorElementDatatype")
@@ -101,5 +57,4 @@ NB_MODULE(cpp_onnx_python_ext, m)
 		.def("run", &InferenceSession::run);
 
 	m.doc() = "Onnxruntime bindings";
-	m.def("model_info", &model_info, nb::arg("model_path"));
 }

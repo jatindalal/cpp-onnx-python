@@ -7,6 +7,7 @@
 #include <onnxruntime_c_api.h>
 #include <onnxruntime_cxx_api.h>
 #include <stdexcept>
+#include <vector>
 
 InferenceSession::InferenceSession(const char *model_path,
 	InferenceSessionProvider provider,

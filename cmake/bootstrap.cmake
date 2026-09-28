@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.15)
 set(ORT_VERSION "1.30.0")
 set(DEPS_DIR ${CMAKE_SOURCE_DIR}/third-party/deps/)
 set(ORT_DIR "${DEPS_DIR}/onnxruntime")
+set(ORT_CUDA_IDENTIFIER "gpu_cuda12")
 
 if(WIN32)
     set(ORT_PLATFORM "win")
@@ -23,7 +24,12 @@ else()
     set(ORT_ARCH "x64")
 endif()
 
-set(ARCHIVE "onnxruntime-${ORT_PLATFORM}-${ORT_ARCH}-${ORT_VERSION}${ARCHIVE_EXT}")
+if(APPLE)
+    set(ARCHIVE "onnxruntime-${ORT_PLATFORM}-${ORT_ARCH}-${ORT_VERSION}${ARCHIVE_EXT}")
+else()
+    set(ARCHIVE "onnxruntime-${ORT_PLATFORM}-${ORT_ARCH}-${ORT_CUDA_IDENTIFIER}-${ORT_VERSION}${ARCHIVE_EXT}")
+endif()
+
 set(URL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${ARCHIVE}")
 set(ARCHIVE_PATH "${DEPS_DIR}/${ARCHIVE}")
 set(ORT_EXTRACTED_DIR "${DEPS_DIR}/onnxruntime-${ORT_PLATFORM}-${ORT_ARCH}-${ORT_VERSION}")
@@ -50,6 +56,7 @@ endif()
 message(STATUS "Downloading ONNX Runtime ${ORT_VERSION}")
 message(STATUS "  ${URL}")
 
+file(MAKE_DIRECTORY ${DEPS_DIR})
 file(DOWNLOAD
     "${URL}"
     "${ARCHIVE_PATH}"
