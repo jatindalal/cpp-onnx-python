@@ -9,6 +9,10 @@
 #include <stdexcept>
 #include <vector>
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 InferenceSession::InferenceSession(const char *model_path,
 	InferenceSessionProvider provider,
 	int intra_op_num_threads)
@@ -55,13 +59,23 @@ Ort::Session InferenceSession::create_session(const char *model_path,
 			throw std::runtime_error(std::format("Onnxruntime isn't built with {}", provider));
 		}
 #if defined(_WIN32) || defined(__linux__)
-		session_options.AppendExecutionProvider_CUDA(0);
+		session_options.AppendExecutionProvider_CUDA({});
 #elif defined(__APPLE__)
 		session_options.AppendExecutionProvider("CoreML");
 #endif
 	}
 	session_options.SetIntraOpNumThreads(intra_op_num_threads);
+#if defined(_WIN32)
+    if (!model_path) {
+        return Ort::Session(m_ort_env, std::wstring(L"").c_str(), session_options);
+    }
+    int buffer_size = MultiByteToWideChar(CP_UTF8, 0, model_path, -1, NULL, 0);
+    std::wstring wide_path(buffer_size, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, model_path, -1, &wide_path[0], buffer_size);
+    return Ort::Session(m_ort_env, wide_path.c_str(), session_options);
+#else
 	return Ort::Session(m_ort_env, model_path, session_options);
+#endif
 }
 
 std::vector<InferenceSession::SessionInputOutput> InferenceSession::get_inputs()
