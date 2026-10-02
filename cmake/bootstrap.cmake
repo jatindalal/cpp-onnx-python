@@ -74,3 +74,15 @@ else()
         set(ORT_LIB_FILE "${ORT_FINAL_DIR}/lib/libonnxruntime.dylib")
     endif()
 endif()
+
+add_library(onnxruntime SHARED IMPORTED GLOBAL)
+if(WIN32)
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_IMPLIB "${ORT_IMPLIB}"
+        IMPORTED_LOCATION "${ORT_RUNTIME_DLL}")
+else()
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${ORT_LIB_FILE}")
+endif()
+set_target_properties(onnxruntime PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${ORT_FINAL_DIR}/include")

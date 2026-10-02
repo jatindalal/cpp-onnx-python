@@ -46,19 +46,6 @@ find_package(nanobind CONFIG REQUIRED)
 
 include(cmake/bootstrap.cmake)
 
-add_library(onnxruntime SHARED IMPORTED GLOBAL)
-
-if(WIN32)
-    set_target_properties(onnxruntime PROPERTIES
-        IMPORTED_IMPLIB "${ORT_IMPLIB}"
-        IMPORTED_LOCATION "${ORT_RUNTIME_DLL}")
-else()
-    set_target_properties(onnxruntime PROPERTIES
-        IMPORTED_LOCATION "${ORT_LIB_FILE}")
-endif()
-set_target_properties(onnxruntime PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${ORT_FINAL_DIR}/include")
-
 nanobind_add_module(
   cpp_onnx_python_ext
   STABLE_ABI
