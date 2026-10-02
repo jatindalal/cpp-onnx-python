@@ -57,7 +57,7 @@ else()
         IMPORTED_LOCATION "${ORT_LIB_FILE}")
 endif()
 set_target_properties(onnxruntime PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${ORT_DIR}/include")
+    INTERFACE_INCLUDE_DIRECTORIES "${ORT_FINAL_DIR}/include")
 
 nanobind_add_module(
   cpp_onnx_python_ext
