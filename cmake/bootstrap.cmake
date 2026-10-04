@@ -35,35 +35,34 @@ endif()
 set(ORT_URL "https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/${ORT_ARCHIVE}")
 set(ARCHIVE_PATH "${CMAKE_BINARY_DIR}/${ORT_ARCHIVE}")
 
-if(EXISTS ${ARCHIVE_PATH})
-    message(STATUS "ORT already downloaded")
-else()
-    file(
-        DOWNLOAD ${ORT_URL} ${ARCHIVE_PATH}
-        SHOW_PROGRESS
-    )
-endif()
-file(
-    ARCHIVE_EXTRACT
-    INPUT ${CMAKE_BINARY_DIR}/${ORT_ARCHIVE}
-    DESTINATION ${ORT_DIR}
-)
-file(
-    GLOB ORT_EXTRACTED_DIR_LIST
-    LIST_DIRECTORIES true
-    "${ORT_DIR}/onnxruntime-*"
-)
-list(
-    GET ORT_EXTRACTED_DIR_LIST 0 ORT_EXTRACTED_DIR
-)
 if(EXISTS ${ORT_FINAL_DIR})
+    message(STATUS "ORT already present")
+else()
+    if(EXISTS ${ARCHIVE_PATH})
+        message(STATUS "ORT already downloaded")
+    else()
+        file(
+            DOWNLOAD ${ORT_URL} ${ARCHIVE_PATH}
+            SHOW_PROGRESS
+        )
+    endif()
     file(
-        REMOVE_RECURSE ${ORT_FINAL_DIR}
+        ARCHIVE_EXTRACT
+        INPUT ${CMAKE_BINARY_DIR}/${ORT_ARCHIVE}
+        DESTINATION ${ORT_DIR}
+    )
+    file(
+        GLOB ORT_EXTRACTED_DIR_LIST
+        LIST_DIRECTORIES true
+        "${ORT_DIR}/onnxruntime-*"
+    )
+    list(
+        GET ORT_EXTRACTED_DIR_LIST 0 ORT_EXTRACTED_DIR
+    )
+    file(
+        RENAME ${ORT_EXTRACTED_DIR} ${ORT_FINAL_DIR}
     )
 endif()
-file(
-    RENAME ${ORT_EXTRACTED_DIR} ${ORT_FINAL_DIR}
-)
 
 if (WIN32)
     set(ORT_IMPLIB "${ORT_FINAL_DIR}/lib/onnxruntime.lib")
@@ -86,3 +85,24 @@ else()
 endif()
 set_target_properties(onnxruntime PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${ORT_FINAL_DIR}/include")
+
+# ----------
+# -- cuda --
+# ----------
+
+if (WIN32)
+    set(CUDA_WHEEL_DIR ${CMAKE_BINARY_DIR}/cuda_wheels)
+    add_custom_target(cuda_runtime ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CUDA_WHEEL_DIR}
+        COMMAND uv pip install
+                --target ${CUDA_WHEEL_DIR}
+                --upgrade
+                nvidia-cuda-runtime-cu12
+                nvidia-cublas-cu12
+                nvidia-cudnn-cu12
+    )
+    file(GLOB_RECURSE CUDA_DLLS
+        ${CUDA_WHEEL_DIR}/nvidia/*/bin/*.dll
+    )
+    message("cuda dlls downloaded ${CUDA_DLLS}")
+endif()

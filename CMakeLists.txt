@@ -74,11 +74,20 @@ install(TARGETS cpp_onnx_python_ext
     RUNTIME DESTINATION cpp_onnx_python)
 
 if(WIN32)
-    install(FILES "${ORT_RUNTIME_DLL}" DESTINATION cpp_onnx_python)
+    message(INFO "DLL PATH ${ORT_RUNTIME_DLL}")
+    install(DIRECTORY "${ORT_FINAL_DIR}/lib/"
+        DESTINATION cpp_onnx_python
+        FILES_MATCHING
+        PATTERN "*.dll"
+    )
+    install(
+        FILES ${CUDA_DLLS}
+        DESTINATION cpp_onnx_python
+    )
 else()
     # Real file plus the SONAME / install-name symlinks, resolved
     # relative to lib/.
-    install(DIRECTORY "${ORT_DIR}/lib/"
+    install(DIRECTORY "${ORT_FINAL_DIR}/lib/"
         DESTINATION cpp_onnx_python
         FILES_MATCHING
         PATTERN "${ORT_LIB_NAME}*"
