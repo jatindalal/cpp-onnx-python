@@ -1,0 +1,65 @@
+{
+  "environment": {
+    "hostname": "hazard.local",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "processor": "arm",
+    "python": "3.12.14",
+    "numpy": "2.5.2",
+    "onnxruntime_python": "1.30.0",
+    "onnxruntime_providers": [
+      "CoreMLExecutionProvider",
+      "AzureExecutionProvider",
+      "CPUExecutionProvider"
+    ],
+    "timestamp_utc": "2026-10-11T02:33:24+00:00"
+  },
+  "config": {
+    "model": "tests/fixtures/mul_add.onnx",
+    "repetitions": 1000,
+    "warmup": 200,
+    "trials": 5,
+    "threads": 0,
+    "provider": "cpu"
+  },
+  "numpy_equivalent": {
+    "mean_ms": 0.0011487200040392054,
+    "median_ms": 0.001165999947261298,
+    "p95_ms": 0.001207999957841821,
+    "min_ms": 0.0010829999155248515,
+    "throughput_per_s": 870534.1566993991
+  },
+  "onnxruntime_python_api": {
+    "mean_ms": 0.0026432199983901228,
+    "median_ms": 0.0026249999791616574,
+    "p95_ms": 0.002708000010898104,
+    "min_ms": 0.002499999936844688,
+    "throughput_per_s": 378326.435411755
+  },
+  "cpp_binding": {
+    "mean_ms": 0.0021710370001528645,
+    "median_ms": 0.0021669998204743024,
+    "p95_ms": 0.002249999852210749,
+    "min_ms": 0.002042000232904684,
+    "throughput_per_s": 460609.3769611431
+  },
+  "cpp_binding_single": {
+    "mean_ms": 0.0021419919980871782,
+    "median_ms": 0.0021250002646411303,
+    "p95_ms": 0.002208000296377577,
+    "min_ms": 0.00199999976757681,
+    "throughput_per_s": 466855.1520701341
+  },
+  "direct_cpp": {
+    "path": "direct_cpp",
+    "model": "tests/fixtures/mul_add.onnx",
+    "provider": "cpu",
+    "input_elements": 192,
+    "warmup": 200,
+    "repetitions": 1000,
+    "mean_ms": 0.00165304,
+    "median_ms": 0.001666,
+    "p95_ms": 0.001708,
+    "throughput_per_s": 604945
+  }
+}

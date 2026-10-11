@@ -1,198 +1,239 @@
-#include "inference_session.h"
-#include "nanobind/nanobind.h"
-#include "nanobind/ndarray.h"
-#include <cstdint>
+#include "cpp_onnx_python/inference.hpp"
+
+#include <algorithm>
 #include <cstring>
 #include <format>
-#include <onnxruntime_c_api.h>
-#include <onnxruntime_cxx_api.h>
-#include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
-#if defined(_WIN32)
-#include <windows.h>
+namespace cpp_onnx_python {
+namespace {
+
+#if defined(__APPLE__)
+#define CPP_ONNX_PYTHON_GPU_PROVIDER "CoreMLExecutionProvider"
+#elif defined(_WIN32) || defined(__linux__)
+#define CPP_ONNX_PYTHON_GPU_PROVIDER "CUDAExecutionProvider"
 #endif
 
-InferenceSession::InferenceSession(const char *model_path,
-	InferenceSessionProvider provider,
-	int intra_op_num_threads)
-	: m_ort_env(ORT_LOGGING_LEVEL_WARNING, "inference_session")
-	, m_session(create_session(model_path, provider, intra_op_num_threads))
-	, m_memory_info(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
+const char *provider_name(Provider provider)
+{
+	if (provider == Provider::CPU)
+		return "CPUExecutionProvider";
+#ifndef CPP_ONNX_PYTHON_GPU_PROVIDER
+	throw RuntimeError("GPU execution providers are not supported on this platform");
+#else
+	return CPP_ONNX_PYTHON_GPU_PROVIDER;
+#endif
+}
+
+::GraphOptimizationLevel to_ort(OptimizationLevel level)
+{
+	static constexpr ::GraphOptimizationLevel levels[] = {
+		ORT_DISABLE_ALL, ORT_ENABLE_BASIC, ORT_ENABLE_EXTENDED, ORT_ENABLE_ALL,
+	};
+	return levels[static_cast<std::size_t>(level)];
+}
+
+/// One process-wide ONNX Runtime environment; logging is registered once.
+Ort::Env &shared_environment()
+{
+	static Ort::Env environment(ORT_LOGGING_LEVEL_WARNING, "cpp_onnx_python");
+	return environment;
+}
+
+} // namespace
+
+InferenceSession::InferenceSession(std::filesystem::path model_path,
+	Provider provider,
+	SessionOptions options)
+	: m_memory_info(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
+{
+	if (model_path.empty())
+		throw ValueError("model_path must not be empty");
+
+	std::error_code ec;
+	if (!std::filesystem::exists(model_path, ec) || ec)
+		throw FileNotFoundError(
+			std::format("Model file not found: '{}'", model_path.string()));
+	if (!std::filesystem::is_regular_file(model_path, ec) || ec)
+		throw ValueError(
+			std::format("model_path is not a regular file: '{}'", model_path.string()));
+	if (options.intra_op_num_threads < 0)
+		throw ValueError("intra_op_num_threads must be >= 0");
+	if (options.inter_op_num_threads < 0)
+		throw ValueError("inter_op_num_threads must be >= 0");
+
+	m_session = create_session(model_path, provider, options);
+	inspect_model();
+}
+
+Ort::Session InferenceSession::create_session(const std::filesystem::path &model_path,
+	Provider provider,
+	const SessionOptions &options)
+{
+	const std::string requested = provider_name(provider);
+	const std::vector<std::string> available = Ort::GetAvailableProviders();
+	if (std::find(available.begin(), available.end(), requested) == available.end()) {
+		std::string listed;
+		for (const std::string &name : available)
+			listed += (listed.empty() ? "" : ", ") + name;
+		throw RuntimeError(std::format(
+			"Provider '{}' is not available; available: {}", requested, listed));
+	}
+
+	Ort::SessionOptions session_options;
+	session_options.SetIntraOpNumThreads(options.intra_op_num_threads);
+	if (options.inter_op_num_threads > 0) {
+		session_options.SetExecutionMode(ORT_PARALLEL);
+		session_options.SetInterOpNumThreads(options.inter_op_num_threads);
+	}
+	session_options.SetGraphOptimizationLevel(to_ort(options.graph_optimization_level));
+	for (const auto &[key, value] : options.session_config)
+		session_options.AddConfigEntry(key.c_str(), value.c_str());
+
+	if (provider == Provider::GPU) {
+#if defined(_WIN32) || defined(__linux__)
+		Ort::CUDAProviderOptions cuda;
+		if (!options.provider_options.empty())
+			cuda.Update(options.provider_options);
+		session_options.AppendExecutionProvider_CUDA_V2(*cuda);
+#elif defined(__APPLE__)
+		session_options.AppendExecutionProvider(requested, options.provider_options);
+#endif
+	}
+
+	try {
+		// path::c_str() is const char* on POSIX and const wchar_t* on Windows.
+		return Ort::Session(shared_environment(), model_path.c_str(), session_options);
+	} catch (const Ort::Exception &e) {
+		throw RuntimeError(std::format("Failed to create a session for '{}': {}",
+			model_path.string(), e.what()));
+	}
+}
+
+void InferenceSession::inspect_model()
 {
 	Ort::AllocatorWithDefaultOptions allocator;
-	size_t input_count = m_session.GetInputCount();
-	size_t output_count = m_session.GetOutputCount();
-	for (size_t input_index = 0; input_index < input_count; input_index++) {
-		Ort::AllocatedStringPtr name = m_session.GetInputNameAllocated(input_index, allocator);
-		Ort::TypeInfo type_info = m_session.GetInputTypeInfo(input_index);
-		Ort::ConstTensorTypeAndShapeInfo tensor_info = type_info.GetTensorTypeAndShapeInfo();
-		ONNXTensorElementDataType element_type = tensor_info.GetElementType();
-		std::vector<int64_t> shape = tensor_info.GetShape();
-		m_inputs.emplace_back(std::string(name.get()), shape.size(), shape, element_type);
-	}
-	for (size_t output_index = 0; output_index < output_count; output_index++) {
-		Ort::AllocatedStringPtr name = m_session.GetOutputNameAllocated(output_index, allocator);
-		Ort::TypeInfo type_info = m_session.GetOutputTypeInfo(output_index);
-		Ort::ConstTensorTypeAndShapeInfo tensor_info = type_info.GetTensorTypeAndShapeInfo();
-		ONNXTensorElementDataType element_type = tensor_info.GetElementType();
-		std::vector<int64_t> shape = tensor_info.GetShape();
-		m_outputs.emplace_back(std::string(name.get()), shape.size(), shape, element_type);
-	}
+	const auto describe = [&](std::size_t index, bool is_input) {
+		Ort::AllocatedStringPtr name = is_input
+			? m_session.GetInputNameAllocated(index, allocator)
+			: m_session.GetOutputNameAllocated(index, allocator);
+		Ort::TypeInfo type_info = is_input
+			? m_session.GetInputTypeInfo(index)
+			: m_session.GetOutputTypeInfo(index);
+		Ort::ConstTensorTypeAndShapeInfo info = type_info.GetTensorTypeAndShapeInfo();
+		return TensorInfo {
+			std::string(name.get()),
+			static_cast<DataType>(info.GetElementType()),
+			info.GetShape(),
+		};
+	};
+
+	const std::size_t input_count = m_session.GetInputCount();
+	m_inputs.reserve(input_count);
+	for (std::size_t i = 0; i < input_count; ++i)
+		m_inputs.push_back(describe(i, true));
+
+	const std::size_t output_count = m_session.GetOutputCount();
+	m_outputs.reserve(output_count);
+	for (std::size_t i = 0; i < output_count; ++i)
+		m_outputs.push_back(describe(i, false));
+
+	for (const TensorInfo &input : m_inputs)
+		m_input_names.push_back(input.name.c_str());
+	for (const TensorInfo &output : m_outputs)
+		m_output_names.push_back(output.name.c_str());
 }
 
-Ort::Session InferenceSession::create_session(const char *model_path,
-	InferenceSessionProvider provider,
-	int intra_op_num_threads)
+void InferenceSession::validate_inputs(const std::vector<InputTensor> &inputs) const
 {
-	Ort::SessionOptions session_options;
-	if (provider == InferenceSessionProvider::GPU) {
-		std::vector<std::string> providers = Ort::GetAvailableProviders();
-#if defined(_WIN32) || defined(__linux__)
-		std::string provider = "CUDAExecutionProvider";
-#elif defined(__APPLE__)
-		std::string provider = "CoreMLExecutionProvider";
-#else
-#error "Unsupported Platform"
-#endif
-		if (std::find(providers.begin(), providers.end(), provider) == providers.end()) {
-			throw std::runtime_error(std::format("Onnxruntime isn't built with {}", provider));
-		}
-#if defined(_WIN32) || defined(__linux__)
-		session_options.AppendExecutionProvider_CUDA({});
-#elif defined(__APPLE__)
-		session_options.AppendExecutionProvider("CoreML");
-#endif
-	}
-	session_options.SetIntraOpNumThreads(intra_op_num_threads);
-#if defined(_WIN32)
-    if (!model_path) {
-        return Ort::Session(m_ort_env, std::wstring(L"").c_str(), session_options);
-    }
-    int buffer_size = MultiByteToWideChar(CP_UTF8, 0, model_path, -1, NULL, 0);
-    std::wstring wide_path(buffer_size, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, model_path, -1, &wide_path[0], buffer_size);
-    return Ort::Session(m_ort_env, wide_path.c_str(), session_options);
-#else
-	return Ort::Session(m_ort_env, model_path, session_options);
-#endif
-}
+	if (inputs.size() != m_inputs.size())
+		throw ValueError(std::format("Expected {} input array(s), got {}",
+			m_inputs.size(), inputs.size()));
 
-std::vector<InferenceSession::SessionInputOutput> InferenceSession::get_inputs()
-{
-	return m_inputs;
-}
+	for (std::size_t i = 0; i < inputs.size(); ++i) {
+		const InputTensor &input = inputs[i];
+		const TensorInfo &expected = m_inputs[i];
 
-std::vector<InferenceSession::SessionInputOutput> InferenceSession::get_outputs()
-{
-	return m_outputs;
-}
+		if (!is_numpy_compatible(input.type))
+			throw NotImplementedError(
+				std::format("Input '{}' has unsupported element type '{}'",
+					expected.name, data_type_name(input.type)));
+		if (input.type != expected.type)
+			throw ValueError(std::format("Input '{}' expects dtype '{}', got '{}'",
+				expected.name, data_type_name(expected.type),
+				data_type_name(input.type)));
+		if (input.rank != expected.shape.size())
+			throw ValueError(std::format("Input '{}' expects rank {}, got {}",
+				expected.name, expected.shape.size(), input.rank));
 
-void InferenceSession::validate_input(const std::vector<nb::ndarray<nb::numpy>> &inputs)
-{
-	if (inputs.size() != m_inputs.size()) {
-		throw std::runtime_error(
-			std::format(
-				"Wrong Input Dimensions, expected: {}, got: {}",
-				m_inputs.size(),
-				inputs.size()));
-	}
-
-	for (size_t i = 0; i < inputs.size(); i++) {
-		const auto &input = inputs[i];
-		if (input.device_type() != nb::device::cpu::value) {
-			throw std::runtime_error("Input arrays must be cpu only!");
+		std::size_t element_count = 1;
+		for (std::size_t dim = 0; dim < input.rank; ++dim) {
+			const int64_t model_dim = expected.shape[dim];
+			if (model_dim >= 0 && input.shape[dim] != model_dim)
+				throw ValueError(
+					std::format("Input '{}' expects shape {} but got {}",
+						expected.name,
+						format_shape(expected.shape.data(),
+							expected.shape.size()),
+						format_shape(input.shape, input.rank)));
+			element_count *= static_cast<std::size_t>(
+				input.shape[dim] < 0 ? 0 : input.shape[dim]);
 		}
 
-		const auto &expected_dtype = m_dtype_conversion_map.at(m_inputs[i].type);
-		if (input.dtype() != expected_dtype) {
-			throw std::runtime_error(std::format("Wrong dtype for input {}", i));
-		}
-
-		if (input.ndim() != m_inputs[i].rank) {
-			throw std::runtime_error(
-				std::format("Wrong ndim for input expected: {}, got: {}",
-					m_inputs[i].rank, input.ndim()));
-		}
-
-		// contiguity check
-		if (input.ndim() > 0 && input.size() > 1) {
-			bool continguous = true;
-			int64_t accum = 1;
-			for (int64_t j = input.ndim() - 1; j >= 0; j--) {
-				if (!continguous)
-					break;
-				continguous = input.shape(j) == 1 || input.stride(j) == accum;
-				accum *= static_cast<int64_t>(input.shape(j));
-			}
-			if (!continguous) {
-				throw std::invalid_argument(std::format("input {} must be C-contiguous", i));
-			}
-		}
+		if (input.nbytes < element_count * element_size(expected.type))
+			throw ValueError(
+				std::format("Input '{}' is smaller than its declared shape {}",
+					expected.name, format_shape(input.shape, input.rank)));
 	}
 }
-std::vector<nb::ndarray<nb::numpy>> InferenceSession::run(const std::vector<nb::ndarray<nb::numpy>> &inputs)
+
+std::vector<OutputTensor> InferenceSession::run(const std::vector<InputTensor> &inputs)
 {
-	validate_input(inputs);
+	validate_inputs(inputs);
 
 	std::vector<Ort::Value> input_tensors;
-	for (size_t i = 0; i < inputs.size(); i++) {
-		const auto &input = inputs[i];
-		std::vector<int64_t> input_shape(input.ndim());
-		for (size_t j = 0; j < input.ndim(); j++) {
-			input_shape[j] = static_cast<int64_t>(input.shape(j));
-		}
-
-		input_tensors.push_back(
-			Ort::Value::CreateTensor(m_memory_info,
-				input.data(),
-				input.nbytes(),
-				input_shape.data(),
-				input_shape.size(),
-				m_inputs[i].type));
-	}
-	std::vector<const char *> in_names, out_names;
-	for (const auto &input : m_inputs) {
-		in_names.push_back(input.name.c_str());
-	}
-	for (const auto &output : m_outputs) {
-		out_names.push_back(output.name.c_str());
+	input_tensors.reserve(inputs.size());
+	for (const InputTensor &input : inputs) {
+		// data/shape are borrowed for the duration of this call.
+		input_tensors.push_back(Ort::Value::CreateTensor(m_memory_info,
+			const_cast<void *>(input.data),
+			input.nbytes,
+			input.shape,
+			input.rank,
+			static_cast<ONNXTensorElementDataType>(input.type)));
 	}
 
 	std::vector<Ort::Value> output_tensors;
-	{
-		nb::gil_scoped_release release;
-		output_tensors = m_session.Run(
-			Ort::RunOptions { }, in_names.data(), input_tensors.data(),
-			input_tensors.size(), out_names.data(), out_names.size());
+	try {
+		output_tensors = m_session.Run(m_run_options,
+			m_input_names.data(), input_tensors.data(), input_tensors.size(),
+			m_output_names.data(), m_output_names.size());
+	} catch (const Ort::Exception &e) {
+		throw RuntimeError(std::format("ONNX Runtime inference failed: {}", e.what()));
 	}
 
-	std::vector<nb::ndarray<nb::numpy>> outputs;
+	std::vector<OutputTensor> outputs;
 	outputs.reserve(output_tensors.size());
-	for (size_t i = 0; i < output_tensors.size(); i++) {
-		const auto &output_tensor = output_tensors[i];
-		auto info = output_tensor.GetTensorTypeAndShapeInfo();
+	for (Ort::Value &value : output_tensors) {
+		const Ort::TensorTypeAndShapeInfo info = value.GetTensorTypeAndShapeInfo();
+		const DataType type = static_cast<DataType>(info.GetElementType());
+		if (!is_numpy_compatible(type))
+			throw NotImplementedError(
+				std::format("Model produced an output with unsupported element "
+					    "type '{}'",
+					data_type_name(type)));
 
-		const auto type = info.GetElementType();
-		const auto shape = info.GetShape();
-		const auto dtype = m_dtype_conversion_map.at(type);
-		const size_t nbytes = info.GetElementCount() * (dtype.bits / 8);
-
-		uint8_t *buffer = new uint8_t[nbytes];
-		std::memcpy(buffer, output_tensor.GetTensorRawData(), nbytes);
-
-		nb::capsule owner(buffer, [](void *p) noexcept {
-			delete[] static_cast<uint8_t *>(p);
-		});
-
-		std::vector<size_t> s_shape;
-		s_shape.reserve(shape.size());
-		for (int64_t dim : shape) {
-			s_shape.push_back(static_cast<size_t>(dim));
-		}
-		outputs.push_back(
-			nb::ndarray<nb::numpy>(buffer, s_shape.size(), s_shape.data(), owner, { }, dtype));
+		OutputTensor output;
+		output.type = type;
+		output.shape = info.GetShape();
+		output.nbytes = info.GetElementCount() * element_size(type);
+		output.data = std::make_unique<uint8_t[]>(output.nbytes);
+		std::memcpy(output.data.get(), value.GetTensorRawData(), output.nbytes);
+		outputs.push_back(std::move(output));
 	}
-
 	return outputs;
 }
+
+} // namespace cpp_onnx_python

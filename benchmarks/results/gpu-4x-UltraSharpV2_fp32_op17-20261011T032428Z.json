@@ -1,0 +1,120 @@
+{
+  "environment": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "python": "3.12.14",
+    "timestamp_utc": "2026-10-11T03:24:28+00:00"
+  },
+  "config": {
+    "model": "4x-UltraSharpV2_fp32_op17.onnx",
+    "shape": [
+      1,
+      3,
+      64,
+      64
+    ],
+    "repetitions": 3,
+    "warmup": 1,
+    "trials": 1,
+    "threads": 0,
+    "impls": [
+      "ours"
+    ],
+    "model_sha256": "6c0201e3403745f39a9aa5273c50ed084cf6c4af5a71a4654c30252cf19bf0a5"
+  },
+  "results": [
+    {
+      "implementation": "ours",
+      "provider": "cpu",
+      "compute_units": null,
+      "model": "4x-UltraSharpV2_fp32_op17.onnx",
+      "model_mb": 51.8,
+      "model_sha256": "6c0201e3403745f39a9aa5273c50ed084cf6c4af5a71a4654c30252cf19bf0a5",
+      "input_shape": [
+        1,
+        3,
+        64,
+        64
+      ],
+      "input_name": "input",
+      "output_shape": [
+        1,
+        3,
+        256,
+        256
+      ],
+      "build_s": 3.45,
+      "finite": true,
+      "max_abs_diff_vs_cpu": 0.0,
+      "top1_match_vs_cpu": null,
+      "mean_ms": 518.5925,
+      "median_ms": 519.4744,
+      "p95_ms": 519.4744,
+      "min_ms": 514.0681,
+      "throughput_per_s": 1.9283,
+      "first_call_ms": 514.0681
+    },
+    {
+      "implementation": "ours",
+      "provider": "coreml",
+      "compute_units": "CPUOnly",
+      "model": "4x-UltraSharpV2_fp32_op17.onnx",
+      "model_mb": 51.8,
+      "model_sha256": "6c0201e3403745f39a9aa5273c50ed084cf6c4af5a71a4654c30252cf19bf0a5",
+      "input_shape": [
+        1,
+        3,
+        64,
+        64
+      ],
+      "input_name": "input",
+      "output_shape": [
+        1,
+        3,
+        256,
+        256
+      ],
+      "build_s": 15.26,
+      "finite": true,
+      "max_abs_diff_vs_cpu": 0.3443107604980469,
+      "top1_match_vs_cpu": null,
+      "mean_ms": 1867.496,
+      "median_ms": 1724.8004,
+      "p95_ms": 1724.8004,
+      "min_ms": 1717.368,
+      "throughput_per_s": 0.5355,
+      "first_call_ms": 2160.3197
+    },
+    {
+      "implementation": "ours",
+      "provider": "coreml",
+      "compute_units": "CPUAndGPU",
+      "model": "4x-UltraSharpV2_fp32_op17.onnx",
+      "model_mb": 51.8,
+      "model_sha256": "6c0201e3403745f39a9aa5273c50ed084cf6c4af5a71a4654c30252cf19bf0a5",
+      "input_shape": [
+        1,
+        3,
+        64,
+        64
+      ],
+      "input_name": "input",
+      "output_shape": [
+        1,
+        3,
+        256,
+        256
+      ],
+      "build_s": 17.85,
+      "finite": false,
+      "max_abs_diff_vs_cpu": null,
+      "top1_match_vs_cpu": null,
+      "mean_ms": 61465.1023,
+      "median_ms": 61715.4222,
+      "p95_ms": 61715.4222,
+      "min_ms": 60647.6557,
+      "throughput_per_s": 0.0163,
+      "first_call_ms": 61715.4222
+    }
+  ]
+}

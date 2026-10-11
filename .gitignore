@@ -219,6 +219,16 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-*third-party*
+# CMake bootstrap output: downloaded ONNX Runtime release archives and the
+# extracted distribution. Recreated deterministically by cmake/bootstrap.cmake.
+/third-party/*.tgz
+/third-party/*.zip
+/third-party/onnxruntime*/
+
+# Local native-only build tree (cmake -S . -B build-native)
+/build-native*/
+
+# Local planning/spec/review notes: kept on disk, intentionally not versioned.
 docs/
 TASKLIST.md
+REVIEW.md
