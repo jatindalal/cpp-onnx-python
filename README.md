@@ -18,19 +18,18 @@ print(y.shape, y.dtype)  # (1, 3, 8, 8) float32
 
 ---
 
-## Why a native boundary?
+## Native Boundary
 
-For large fixed-shape models the per-call cost of the Python↔native boundary is
-small but real, and it is easy to get ownership and dtype handling wrong
-(silent `float16`-as-`uint16`, borrowed buffers that outlive the call, leaks on
-partial failure). This project keeps a deliberately narrow, fully tested path:
+For large fixed-shape models the per-call cost of Python to Native boundary is
+small, but it keeps other problems like ownership and wrong dtype handling at
+bay, There is:
 
-* one process-wide `Ort::Env`, one `Ort::Session` per model;
-* explicit dtype/rank/shape/device/contiguity validation before ORT is called;
+* one process-wide `Ort::Env`, one `Ort::Session` per model
+* explicit dtype/rank/shape/device/contiguity validation before ORT is called
 * Python exceptions (`ValueError`, `FileNotFoundError`, `NotImplementedError`,
-  `RuntimeError`) instead of opaque native errors;
+  `RuntimeError`) instead of opaque native errors
 * outputs copied into buffers owned by a Python capsule, so they stay valid
-  after the call returns.
+  after the call returns
 
 ## Architecture
 
@@ -166,14 +165,10 @@ InferenceSession(
 | unsupported feature | `NotImplementedError` | `string` or `bfloat16` tensors |
 | ONNX Runtime / provider failure | `RuntimeError` | provider unavailable, session build failure |
 
-**Output ownership**: every returned array owns its memory through a Python
-capsule and remains valid and writable after `run` returns, including after the
-session is garbage-collected.
-
-**Threading / GIL**: the GIL is released both while building the session and
-around `Ort::Session::Run` plus the output copy. `Ort::Session::Run` is
-thread-safe, so multiple Python threads may call `run()` on the same session
-concurrently.
+**Output ownership**: every output array owns its memory using a python capsule
+, so it remains valid and writable after `run` returns
+**Threading / GIL**: GIL is relased while bguilding the session and around
+`run` call, `Ort::Session::Run` is thread safe
 
 ## Providers and session options
 
@@ -192,11 +187,9 @@ concurrently.
   `SetGraphOptimizationLevel` and `SetInterOpNumThreads` + parallel execution
   mode.
 
-CoreML has known limitations: models with 0-element intermediate tensors are
-unsupported, and GPU/ANE compute units implicitly use fp16. Passing
-`provider_options={"MLComputeUnits": "CPUOnly"}` gives a numerically-safe fp32
-path. **No GPU performance claim is made.** The CoreML path is smoke-tested via
-`CPP_ONNX_PYTHON_TEST_GPU=1 pytest tests` (finite output on the fixture).
+CoreML has some known limitations and doesn't always work to improve
+performance, this path is smoke-tested but I don't claim any GPU performance
+improvement for this path.
 
 ## Build from source (native)
 
@@ -206,8 +199,7 @@ cmake --build build-native
 ctest --test-dir build-native --output-on-failure
 ```
 
-This builds the core static library, the extension, the native tests, and the
-native benchmark. Inside a wheel build (`SKBUILD`) only the extension is built.
+Builds core static library, extension, native tests and benchmark.
 
 ## Tests
 
@@ -216,13 +208,13 @@ pytest tests -q                       # Python tests (installed package)
 ctest --test-dir build-native -V      # native tests
 ```
 
-* `tests/python/test_inference.py` — 25 tests: metadata, values, output
+* `tests/python/test_inference.py`: 25 tests: metadata, values, output
   ownership after session teardown, repeated calls, two sessions, every
   exception path, non-contiguous/dtype/rank/shape rejection, option validation,
   and provider-error handling. The GPU run test is opt-in via
   `CPP_ONNX_PYTHON_TEST_GPU=1`.
-* `tests/cpp/test_inference.cpp` — the same core exercised without Python.
-* `tests/fixtures/` — `mul_add.onnx`, `expected.npz`, and the generator.
+* `tests/cpp/test_inference.cpp`: the same core exercised without Python.
+* `tests/fixtures/`: `mul_add.onnx`, `expected.npz`, and the generator.
 
 ## Benchmarks
 
@@ -307,7 +299,7 @@ Findings:
 * GPU/ANE acceleration is entirely model-dependent. The dense-convolution
   classifier gets up to **4.1×** (CoreML `ALL`, ANE+GPU) and **1.10×** on the
   GPU (`CPUAndGPU`) path; the small detector is ~2× **slower** on CoreML; and
-  the super-resolution transformer is unusable on CoreML — NaN on GPU and
+  the super-resolution transformer is unusable on CoreML: NaN on GPU and
   3.3× slower even on CoreML CPU.
 * On every CoreML configuration, `ours` matches the official `onnxruntime`
   wheel within noise, so the binding adds no provider-side overhead.
@@ -317,12 +309,12 @@ Findings:
 
 The models are not committed. Sources and SHA256:
 
-* `mobilenetv2-12.onnx` — ONNX Model Zoo:
+* `mobilenetv2-12.onnx`: ONNX Model Zoo:
   `https://github.com/onnx/models/raw/main/validated/vision/classification/mobilenet/model/mobilenetv2-12.onnx`
   (`c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5`)
-* `face_detection_yunet_2026may.onnx` — OpenCV Zoo YuNet
+* `face_detection_yunet_2026may.onnx`: OpenCV Zoo YuNet
   (`ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0`)
-* `4x-UltraSharpV2_fp32_op17.onnx` — the project's target model
+* `4x-UltraSharpV2_fp32_op17.onnx`: the project's target model
   (`6c0201e3403745f39a9aa5273c50ed084cf6c4af5a71a4654c30252cf19bf0a5`)
 
 ## Supported matrix
@@ -337,43 +329,16 @@ Only platforms with a recorded build + import are advertised.
 | Windows x86_64 | source build only; not verified |
 | Python | ✅ 3.12.14; `cp312-abi3` wheel covers 3.12+ |
 
-There is deliberately **no CI pipeline**. Releases are built locally with
-`scripts/release.sh` (see below) and attached to a GitHub Release, which is all
-that review requires.
-
-## Releasing
-
-Two scripts produce the wheels:
-
-* `scripts/release.sh` — builds and tests the macOS wheel, then publishes every
-  wheel in `dist/` to the GitHub Release (needs `gh`).
-* `scripts/linux_wheels.sh` — builds `manylinux_2_28` wheels for aarch64 and
-  x86_64 with the running Docker engine (Colima on macOS). aarch64 builds
-  natively; x86_64 runs through emulation and is slower.
-
-```console
-scripts/release.sh --no-release     # macOS wheel -> dist/
-scripts/linux_wheels.sh             # Linux aarch64 + x86_64 -> dist/
-scripts/release.sh                  # rebuild macOS, publish all wheels
-scripts/release.sh --tag v0.1.1
-```
-
-The Linux wheels bundle the CPU-only ONNX Runtime (the CUDA build is ~10x
-larger) via `-DCPP_ONNX_PYTHON_ORT_VARIANT=cpu`; macOS keeps the CPU build and
-x64 Windows defaults to the CUDA one. `scripts/release.sh` exports
-`MACOSX_DEPLOYMENT_TARGET=14.0` because the bundled ONNX Runtime needs macOS
-14.0 and scikit-build-core derives the wheel tag from that variable. Bump
-`version` in `pyproject.toml` before tagging a release.
 
 ## Known limitations / roadmap
 
-* v0.1 supports a positional list of inputs only; a named-input `dict` API is
-  not implemented.
+* v0.1 supports a positional list of inputs only, a named-input `dict` API is
+  not implemented
 * Non-contiguous inputs are rejected rather than copied.
 * `string`, `bfloat16`, and undefined tensor types are rejected explicitly.
 * No dynamic batching, streaming, async inference, or model downloading.
 * One `Ort::Env` per process; one session per model.
-* Sanitizer runs and a recorded demo are not done yet.
+* No sanitizer run done yet.
 
 ## License and third-party notices
 
@@ -386,19 +351,3 @@ are covered by their own MIT license and third-party notices, copied into
 
 The fixture model is generated locally by `tests/fixtures/generate_fixture.py`
 and contains no third-party data.
-
-## Repository layout
-
-```text
-include/cpp_onnx_python/   public, Python-free C++ API (inference, dtype, errors)
-src/                       core implementation + nanobind extension
-src/cpp_onnx_python/       Python package wrapper
-tests/cpp/                 native tests (CTest)
-tests/python/              pytest suite
-tests/fixtures/            deterministic ONNX fixture + generator + expected values
-examples/                  Python example
-benchmarks/                harness and committed JSON results
-scripts/release.sh         build macOS wheel + publish all wheels to Releases
-scripts/linux_wheels.sh    build Linux (manylinux_2_28) wheels via Docker/Colima
-cmake/bootstrap.cmake      pin-verified, idempotent ONNX Runtime bootstrap
-```
